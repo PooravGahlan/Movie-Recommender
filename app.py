@@ -1,12 +1,6 @@
 """
 CineSense • AI Movie Recommender
-100% Python — no manual HTML/CSS/JS. All visuals, animations, and the
-"splash cursor" style flourishes come from native Streamlit widgets and
-Python libraries (streamlit-option-menu, streamlit-lottie, streamlit-extras,
-Pillow) that expose plain Python function calls.
-
-Install requirements:
-    pip install streamlit requests pandas pillow streamlit-option-menu streamlit-lottie streamlit-extras
+100% Python — no manual HTML/CSS/JS.
 """
 
 import io
@@ -18,6 +12,7 @@ from datetime import datetime
 import pandas as pd
 import requests
 import streamlit as st
+import streamlit.components.v1 as components
 from PIL import Image
 from streamlit_option_menu import option_menu
 from streamlit_lottie import st_lottie
@@ -53,26 +48,18 @@ MOODS = {
 IMG_BASE = "https://image.tmdb.org/t/p/w342"
 BASE_URL = "https://api.themoviedb.org/3"
 
-# ============================================================
-# TMDB API KEY
-# ============================================================
-# Paste your TMDB API key below. It is never shown in the UI and never
-# exposed to the person using the app.
-#
-# Recommended (more secure): instead of hardcoding it here, put it in
-# .streamlit/secrets.toml as:
-#     TMDB_API_KEY = "your_key_here"
-# and it will be picked up automatically — leave the string below empty
-# in that case.
+# 👇 Change this to your deployed Node.js app URL later
+MOVIE_APP_URL = "http://localhost:5173"
 
+# ============================================================
+# API KEYS (from secrets)
+# ============================================================
 api_key = st.secrets.get("TMDB_API_KEY", "")
 
-# --- TEMP DEBUG: remove this block once the key is working ---
-with st.sidebar:
-    st.write("🔧 Debug: key loaded?", bool(api_key))
-    st.write("🔧 Debug: key length", len(api_key) if api_key else 0)
-# --- END TEMP DEBUG ---
-
+if not api_key:
+    st.title("🎬 CineSense — AI Movie Recommender")
+    st.error("TMDB API key not configured. Add it to `.streamlit/secrets.toml`.")
+    st.stop()
 
 LOTTIE_URLS = {
     "hero": "https://assets9.lottiefiles.com/packages/lf20_1pxqjqps.json",
@@ -92,14 +79,14 @@ defaults = {
     "quiz_question": None,
     "similar_target": None,
     "theme_mood": "🌙 Cinema Dark",
-    "scroller_index": 0,
+    "current_playing": None,
 }
 for k, v in defaults.items():
     if k not in st.session_state:
         st.session_state[k] = v
 
 # ============================================================
-# LOTTIE HELPER (pure Python fetch + cache)
+# LOTTIE HELPER
 # ============================================================
 @st.cache_data(ttl=86400, show_spinner=False)
 def load_lottie(url):
@@ -113,20 +100,13 @@ def load_lottie(url):
 
 
 def reveal(*elements_fns, delay=0.12):
-    """Progressive 'scroll-reveal' style animation: renders callables one by
-    one with a short pause in between, so content appears to cascade in."""
     for fn in elements_fns:
         fn()
         time.sleep(delay)
 
 
 # ============================================================
-# BOT MASCOT ("Reely") — simple lottie animation with a speech bubble
-# that rotates a new movie-related message every ~12 seconds. No clicking,
-# no dragging, no extra network requests: the message is picked from a
-# pool fetched once and cached, and rotation is driven purely by the
-# system clock (time.time() // 12), so it changes on its own each time
-# the page naturally reruns without forcing any extra reruns or API calls.
+# BOT MASCOT
 # ============================================================
 BOT_MOVIE_TEMPLATES = [
     "{title} is the latest release — check it out! 🎬",
@@ -148,9 +128,6 @@ BOT_GREETINGS = [
 
 @st.cache_data(ttl=1800, show_spinner=False)
 def get_bot_movie_pool():
-    """Pulls a small pool of real trending/latest movies once every 30
-    minutes (cached), so Reely can talk about actual current titles
-    without hitting the API on every rerun."""
     pool = []
     try:
         pool += get_trending()[:10]
@@ -164,8 +141,6 @@ def get_bot_movie_pool():
 
 
 def current_bot_message():
-    """Deterministic-per-12-second-window message, so it rotates on its
-    own without needing autorefresh or extra API calls."""
     pool = get_bot_movie_pool()
     tick = int(time.time() // 12)
     rng = random.Random(tick)
@@ -187,71 +162,10 @@ def render_bot():
             st_lottie(lottie_bot, height=110, key="bot_lottie")
     with col_b:
         st.info(f"🤖 **Reely says:** {current_bot_message()}")
-# ============================================================
-# 3D COVERFLOW SCROLLER
-# A perspective "coverflow" carousel built with plain trigonometry and
-# PIL image compositing (scale + horizontal offset + fade = the
-# illusion of depth) — no CSS 3D transforms, no JS, just math.
-# ============================================================
-@st.cache_data(ttl=1800, show_spinner=False)
-def _poster_image(url, size=(220, 330)):
-    try:
-        r = requests.get(url, timeout=10)
-        return Image.open(io.BytesIO(r.content)).convert("RGBA").resize(size)
-    except Exception:
-        return None
-
-
-def render_3d_scroller(movies, key_prefix="scroller"):
-    movies = [m for m in movies if m.get("poster_path")][:12]
-    if not movies:
-        return
-
-    idx = st.session_state.scroller_index % len(movies)
-
-    canvas_w, canvas_h = 1000, 380
-    canvas = Image.new("RGBA", (canvas_w, canvas_h), (0, 0, 0, 0))
-    center_x, center_y = canvas_w // 2, canvas_h // 2
-
-    order = sorted(range(len(movies)), key=lambda i: -abs(((i - idx + len(movies) // 2) % len(movies)) - len(movies) // 2))
-    for i in order:
-        offset = ((i - idx + len(movies) // 2) % len(movies)) - len(movies) // 2
-        depth = abs(offset)
-        angle = offset * 0.5  # radians-ish spread, purely for projection math
-        scale = max(0.45, 1.0 - depth * 0.18)
-        alpha = max(60, 255 - depth * 60)
-
-        poster = _poster_image(f"{IMG_BASE}{movies[i]['poster_path']}")
-        if poster is None:
-            continue
-        w, h = int(220 * scale), int(330 * scale)
-        poster = poster.resize((w, h))
-        if alpha < 255:
-            a = poster.split()[3].point(lambda p: int(p * (alpha / 255)))
-            poster.putalpha(a)
-
-        x = center_x + int(math.sin(angle) * 260) - w // 2
-        y = center_y - h // 2
-        canvas.alpha_composite(poster, (x, y))
-
-    st.image(canvas, use_container_width=True)
-
-    c1, c2, c3 = st.columns([1, 1, 4])
-    with c1:
-        if st.button("◀ Prev", key=f"{key_prefix}_prev"):
-            st.session_state.scroller_index -= 1
-            st.rerun()
-    with c2:
-        if st.button("Next ▶", key=f"{key_prefix}_next"):
-            st.session_state.scroller_index += 1
-            st.rerun()
-    with c3:
-        current = movies[idx]
-        st.markdown(f"**{current.get('title')}**  •  ⭐ {current.get('vote_average', 0):.1f}")
 
 
 # ============================================================
-# SIDEBAR NAVIGATION (animated, pure Python via streamlit-option-menu)
+# SIDEBAR NAVIGATION
 # ============================================================
 with st.sidebar:
     def _sidebar_lottie():
@@ -292,8 +206,6 @@ with st.sidebar:
 
     st.space(20)
 
-    # Animated count-up for the watchlist metric (runs once per app
-    # session on first sidebar render, pure Python loop, no JS/CSS).
     target = len(st.session_state.watchlist)
     metric_slot = st.empty()
     if not st.session_state.get("_wl_metric_animated"):
@@ -305,13 +217,6 @@ with st.sidebar:
         metric_slot.metric("📋 Watchlist size", target)
     style_metric_cards()
 
-if not api_key or api_key == "PASTE_YOUR_TMDB_API_KEY_HERE":
-    st.title("🎬 CineSense — AI Movie Recommender")
-    st.error(
-        "No TMDB API key is configured. Ask the app administrator to set "
-        "`TMDB_API_KEY` in the code (or `.streamlit/secrets.toml`)."
-    )
-    st.stop()
 
 # ============================================================
 # API HELPERS
@@ -378,10 +283,49 @@ def get_keywords(movie_id):
     return tmdb_get(f"/movie/{movie_id}/keywords").get("keywords", [])
 
 
+def get_trailer_key(movie_id):
+    results = tmdb_get(f"/movie/{movie_id}/videos").get("results", [])
+    youtube_vids = [v for v in results if v.get("site") == "YouTube"]
+    for v in youtube_vids:
+        if v.get("type") == "Trailer" and v.get("official"):
+            return v["key"]
+    for v in youtube_vids:
+        if v.get("type") == "Trailer":
+            return v["key"]
+    for v in youtube_vids:
+        if v.get("type") == "Teaser":
+            return v["key"]
+    return youtube_vids[0]["key"] if youtube_vids else None
+
+
 # ============================================================
-# UI HELPERS — native Streamlit bordered containers, no CSS needed
+# 🎥 MOVIE PLAYER — opens your Node.js app
 # ============================================================
-def render_grid(movies, key_prefix, limit=10, show_add=True, columns=5):
+def render_movie_player(movie):
+    if not movie:
+        return
+    movie_id = movie.get("id")
+    title = movie.get("title") or "Untitled"
+
+    st.markdown(f"### 🎥 Now Playing: {title}")
+
+    # Auto-open your movie app in a new tab
+    components.html(
+        f'<script>window.open("{MOVIE_APP_URL}", "_blank");</script>',
+        height=0,
+    )
+    st.success(f"✅ Opening **{title}** in your movie player...")
+    st.info(f"⚠️ If nothing opened: [Open {title}]({MOVIE_APP_URL})")
+
+    if st.button("✖ Close", key=f"close_{movie_id}"):
+        st.session_state.current_playing = None
+        st.rerun()
+
+
+# ============================================================
+# UI HELPERS
+# ============================================================
+def render_grid(movies, key_prefix, limit=10, show_add=True, columns=5, animate=True):
     movies = [m for m in movies if m.get("poster_path")][:limit]
     if not movies:
         st.warning("No results found.")
@@ -397,7 +341,7 @@ def render_grid(movies, key_prefix, limit=10, show_add=True, columns=5):
                 st.markdown(f"**{title}**")
                 st.caption(f"⭐ {rating:.1f}  •  {year}")
 
-                c1, c2 = st.columns(2)
+                c1, c2, c3 = st.columns(3)
                 with c1:
                     if show_add:
                         if st.button("➕ List", key=f"{key_prefix}_add_{m['id']}_{i}"):
@@ -405,10 +349,17 @@ def render_grid(movies, key_prefix, limit=10, show_add=True, columns=5):
                             st.toast(f"Added '{title}' to watchlist ✅")
                             rain(emoji="🎬", font_size=30, falling_speed=5, animation_length=1)
                 with c2:
-                    if st.button("🔎 Similar", key=f"{key_prefix}_sim_{m['id']}_{i}"):
+                    if st.button("🔎 Sim", key=f"{key_prefix}_sim_{m['id']}_{i}"):
                         st.session_state["similar_target"] = m
+                with c3:
+                    if st.button("🎥 Play", key=f"{key_prefix}_play_{m['id']}_{i}"):
+                        st.session_state.current_playing = m
+                        st.rerun()
+
                 trailer_q = f"{title} {year} trailer".replace(" ", "+")
                 st.markdown(f"[▶ Trailer](https://www.youtube.com/results?search_query={trailer_q})")
+        if animate and (i + 1) % columns == 0:
+            time.sleep(0.08)
 
 
 def animated_spin(label="Spinning the reel...", steps=20, delay=0.02):
@@ -417,6 +368,14 @@ def animated_spin(label="Spinning the reel...", steps=20, delay=0.02):
         time.sleep(delay)
         progress.progress(int((pct + 1) / steps * 100), text=label)
     progress.empty()
+
+
+# ============================================================
+# SHOW PLAYER
+# ============================================================
+if st.session_state.current_playing:
+    render_movie_player(st.session_state.current_playing)
+    st.divider()
 
 
 # ============================================================
@@ -429,11 +388,6 @@ with hero_col1:
     st.write("Discover trending hits, mood-based picks, and hidden gems — curated for you.")
 with hero_col2:
     render_bot()
-
-st.space(20)
-
-st.subheader("🌀 3D Coverflow")
-render_3d_scroller(get_trending(), key_prefix="hero_scroller")
 
 st.space(20)
 
@@ -452,7 +406,6 @@ if page == "Trending & Latest":
 # PAGE: By Genre
 # ============================================================
 elif page == "By Genre":
-    st.subheader("🎭 Top 10 by Genre")
     genre_choice = st.multiselect("Pick one or more genres", list(GENRES.keys()), default=["Action"])
     sort_choice = st.selectbox("Sort by", ["Popularity", "Rating"], index=0)
     sort_param = "popularity.desc" if sort_choice == "Popularity" else "vote_average.desc"
@@ -461,7 +414,10 @@ elif page == "By Genre":
         results = tmdb_get("/discover/movie", {
             "with_genres": genre_ids, "sort_by": sort_param, "vote_count.gte": 100,
         }).get("results", [])
-        render_grid(results, "genre", limit=10)
+        reveal(
+            lambda: st.subheader("🎭 Top 10 by Genre"),
+            lambda: render_grid(results, "genre", limit=10),
+        )
 
 # ============================================================
 # PAGE: Mood Match
@@ -474,8 +430,10 @@ elif page == "Mood Match":
         results = tmdb_get("/discover/movie", {
             "with_genres": genre_ids, "sort_by": "vote_average.desc", "vote_count.gte": 200,
         }).get("results", [])
-        st.caption(f"Recommended for **{mood}** based on genres: {', '.join(MOODS[mood])}")
-        render_grid(results, "mood")
+        reveal(
+            lambda: st.caption(f"Recommended for **{mood}** based on genres: {', '.join(MOODS[mood])}"),
+            lambda: render_grid(results, "mood"),
+        )
 
 # ============================================================
 # PAGE: Search
@@ -497,7 +455,7 @@ elif page == "Search":
         render_grid(get_similar(target["id"]), "similar")
 
 # ============================================================
-# PAGE: Surprise Me (animated roulette)
+# PAGE: Surprise Me
 # ============================================================
 elif page == "Surprise Me":
     st.subheader("🎲 Surprise Me")
@@ -516,9 +474,16 @@ elif page == "Surprise Me":
             st.write(pick.get("overview", "No description available."))
             trailer_q = f"{pick.get('title')} trailer".replace(" ", "+")
             st.markdown(f"[▶ Watch Trailer](https://www.youtube.com/results?search_query={trailer_q})")
-            if st.button("➕ Add to Watchlist", key="surprise_add"):
-                st.session_state.watchlist[pick["id"]] = pick
-                st.toast("Added to watchlist ✅")
+
+            c1a, c1b = st.columns(2)
+            with c1a:
+                if st.button("➕ Add to Watchlist", key="surprise_add"):
+                    st.session_state.watchlist[pick["id"]] = pick
+                    st.toast("Added to watchlist ✅")
+            with c1b:
+                if st.button("🎥 Watch Now", key="surprise_play"):
+                    st.session_state.current_playing = pick
+                    st.rerun()
 
 # ============================================================
 # PAGE: Top Rated
@@ -574,7 +539,7 @@ elif page == "Compare":
     style_metric_cards()
 
 # ============================================================
-# PAGE: AI Recommends (content-based, from watchlist genres)
+# PAGE: AI Recommends
 # ============================================================
 elif page == "AI Recommends":
     st.subheader("✨ AI Recommends — based on your watchlist")
@@ -782,4 +747,4 @@ elif page == "My Watchlist":
 # ============================================================
 st.space(40)
 st.divider()
-st.caption("Built with ❤️ using Streamlit + TMDB API · CineSense — pure Python, no custom HTML/CSS/JS.")
+st.caption("Built with ❤️ using Streamlit + TMDB API · CineSense — pure Python.")
