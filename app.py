@@ -29,26 +29,42 @@ st.set_page_config(
 )
 
 # ============================================================
-# THEME FIX — removes white highlights, blends with dark theme
+# THEME FIX — kills white blocks, blends with dark theme
 # ============================================================
 st.markdown("""
 <style>
     .stButton button {
-        background-color: transparent !important;
+        background-color: rgba(255,255,255,0.05) !important;
         border: 1px solid rgba(255,255,255,0.15) !important;
         color: #ddd !important;
     }
     .stButton button:hover {
         border-color: rgba(255,255,255,0.4) !important;
-        color: #fff !important;
     }
     div[data-testid="metric-container"] {
-        background-color: transparent !important;
+        background-color: rgba(255,255,255,0.05) !important;
         border: 1px solid rgba(255,255,255,0.1) !important;
-        padding: 10px !important;
+        border-radius: 8px !important;
+        padding: 12px !important;
     }
     section[data-testid="stSidebar"] {
         background-color: #0e1117 !important;
+    }
+    div[data-baseweb="select"] > div {
+        background-color: rgba(255,255,255,0.05) !important;
+        border-color: rgba(255,255,255,0.2) !important;
+    }
+    div[data-testid="stVerticalBlockBorder"] {
+        background-color: rgba(255,255,255,0.03) !important;
+        border-color: rgba(255,255,255,0.1) !important;
+    }
+    .stDownloadButton button {
+        background-color: rgba(255,255,255,0.05) !important;
+        border-color: rgba(255,255,255,0.2) !important;
+        color: #ddd !important;
+    }
+    .stProgress > div > div {
+        background-color: #ff4b4b !important;
     }
     div[data-testid="stImage"] img {
         border-radius: 8px;
@@ -76,6 +92,7 @@ MOODS = {
 }
 IMG_BASE = "https://image.tmdb.org/t/p/w342"
 BASE_URL = "https://api.themoviedb.org/3"
+EMBED_BASE = "https://api.codespecters.com"
 
 LOTTIE_URLS = {
     "hero": "https://assets9.lottiefiles.com/packages/lf20_1pxqjqps.json",
@@ -95,6 +112,7 @@ defaults = {
     "quiz_question": None,
     "similar_target": None,
     "theme_mood": "🌙 Cinema Dark",
+    "current_playing": None,
 }
 for k, v in defaults.items():
     if k not in st.session_state:
@@ -299,6 +317,38 @@ def get_keywords(movie_id):
 
 
 # ============================================================
+# 🎥 MOVIE PLAYER — embedded in same page via iframe
+# ============================================================
+def render_movie_player(movie, height=520):
+    if not movie:
+        return
+    movie_id = movie.get("id")
+    title = movie.get("title") or "Untitled"
+
+    embed_key = st.secrets.get("EMBED_API_KEY", "")
+    t = int(time.time() * 1000)
+    embed_url = f"{EMBED_BASE}/embed/movie/{movie_id}?apikey={embed_key}&_={t}"
+
+    st.markdown(f"### 🎥 Now Playing: {title}")
+    st.markdown(
+        f"""
+        <div style="width:100%; border-radius:8px; overflow:hidden;">
+            <iframe src="{embed_url}"
+                width="100%" height="{height}"
+                frameborder="0" allowfullscreen
+                allow="autoplay *; fullscreen *">
+            </iframe>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    if st.button("✖ Close", key=f"close_{movie_id}"):
+        st.session_state.current_playing = None
+        st.rerun()
+
+
+# ============================================================
 # UI HELPERS
 # ============================================================
 def render_grid(movies, key_prefix, limit=10, show_add=True, columns=5, animate=True):
@@ -317,7 +367,7 @@ def render_grid(movies, key_prefix, limit=10, show_add=True, columns=5, animate=
                 st.markdown(f"**{title}**")
                 st.caption(f"⭐ {rating:.1f}  •  {year}")
 
-                c1, c2 = st.columns(2)
+                c1, c2, c3 = st.columns(3)
                 with c1:
                     if show_add:
                         if st.button("+", key=f"{key_prefix}_add_{m['id']}_{i}"):
@@ -327,6 +377,10 @@ def render_grid(movies, key_prefix, limit=10, show_add=True, columns=5, animate=
                 with c2:
                     if st.button("🔍", key=f"{key_prefix}_sim_{m['id']}_{i}"):
                         st.session_state["similar_target"] = m
+                with c3:
+                    if st.button("▶", key=f"{key_prefix}_play_{m['id']}_{i}"):
+                        st.session_state.current_playing = m
+                        st.rerun()
 
                 trailer_q = f"{title} {year} trailer".replace(" ", "+")
                 st.markdown(f"[▶ Trailer](https://www.youtube.com/results?search_query={trailer_q})")
@@ -340,6 +394,14 @@ def animated_spin(label="Spinning the reel...", steps=20, delay=0.02):
         time.sleep(delay)
         progress.progress(int((pct + 1) / steps * 100), text=label)
     progress.empty()
+
+
+# ============================================================
+# 🎥 SHOW PLAYER (if a movie is selected)
+# ============================================================
+if st.session_state.current_playing:
+    render_movie_player(st.session_state.current_playing)
+    st.divider()
 
 
 # ============================================================
@@ -439,9 +501,15 @@ elif page == "Surprise Me":
             trailer_q = f"{pick.get('title')} trailer".replace(" ", "+")
             st.markdown(f"[▶ Watch Trailer](https://www.youtube.com/results?search_query={trailer_q})")
 
-            if st.button("➕ Add to Watchlist", key="surprise_add"):
-                st.session_state.watchlist[pick["id"]] = pick
-                st.toast("Added to watchlist ✅")
+            col_a, col_b = st.columns(2)
+            with col_a:
+                if st.button("➕ Add", key="surprise_add"):
+                    st.session_state.watchlist[pick["id"]] = pick
+                    st.toast("Added to watchlist ✅")
+            with col_b:
+                if st.button("▶ Play", key="surprise_play"):
+                    st.session_state.current_playing = pick
+                    st.rerun()
 
 # ============================================================
 # PAGE: Top Rated
