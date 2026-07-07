@@ -29,7 +29,7 @@ st.set_page_config(
 )
 
 # ============================================================
-# THEME FIX — kills white blocks, blends with dark theme
+# THEME FIX
 # ============================================================
 st.markdown("""
 <style>
@@ -317,29 +317,22 @@ def get_keywords(movie_id):
 
 
 # ============================================================
-# 🎥 MOVIE PLAYER — embedded in same page via iframe
+# 🎥 MOVIE PLAYER — opens codespecters in new tab
 # ============================================================
-def render_movie_player(movie, height=520):
+def render_movie_player(movie):
     if not movie:
         return
     movie_id = movie.get("id")
     title = movie.get("title") or "Untitled"
 
-    embed_key = st.secrets.get("EMBED_API_KEY", "")
-    t = int(time.time() * 1000)
-    embed_url = f"{EMBED_BASE}/embed/movie/{movie_id}?apikey={embed_key}&_={t}"
+    embed_url = f"{EMBED_BASE}/embed/movie/{movie_id}?apikey={st.secrets['EMBED_API_KEY']}"
 
     st.markdown(f"### 🎥 Now Playing: {title}")
     st.markdown(
-        f"""
-        <div style="width:100%; border-radius:8px; overflow:hidden;">
-            <iframe src="{embed_url}"
-                width="100%" height="{height}"
-                frameborder="0" allowfullscreen
-                allow="autoplay *; fullscreen *">
-            </iframe>
-        </div>
-        """,
+        f'<a href="{embed_url}" target="_blank" '
+        f'style="display:inline-block;padding:14px 28px;background:#ff4b4b;'
+        f'color:white;border-radius:8px;text-decoration:none;font-size:20px;'
+        f'font-weight:bold;">▶ Open {title}</a>',
         unsafe_allow_html=True,
     )
 
@@ -397,7 +390,7 @@ def animated_spin(label="Spinning the reel...", steps=20, delay=0.02):
 
 
 # ============================================================
-# 🎥 SHOW PLAYER (if a movie is selected)
+# SHOW PLAYER
 # ============================================================
 if st.session_state.current_playing:
     render_movie_player(st.session_state.current_playing)
