@@ -92,8 +92,6 @@ MOODS = {
 }
 IMG_BASE = "https://image.tmdb.org/t/p/w342"
 BASE_URL = "https://api.themoviedb.org/3"
-<<<<<<< HEAD
-
 # 👇 Change this to your deployed Node.js app URL later
 EMBED_BASE = "https://api.codespecters.com"
 
