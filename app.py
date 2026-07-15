@@ -92,7 +92,24 @@ MOODS = {
 }
 IMG_BASE = "https://image.tmdb.org/t/p/w342"
 BASE_URL = "https://api.themoviedb.org/3"
+<<<<<<< HEAD
+
+# 👇 Change this to your deployed Node.js app URL later
 EMBED_BASE = "https://api.codespecters.com"
+
+
+# ============================================================
+# API KEYS (from secrets)
+# ============================================================
+api_key = st.secrets.get("TMDB_API_KEY", "")
+
+if not api_key:
+    st.title("🎬 CineSense — AI Movie Recommender")
+    st.error("TMDB API key not configured. Add it to `.streamlit/secrets.toml`.")
+    st.stop()
+=======
+EMBED_BASE = "https://api.codespecters.com"
+>>>>>>> d1ecd21dd7e9cd4bb4daff4446c6de9107e78c85
 
 LOTTIE_URLS = {
     "hero": "https://assets9.lottiefiles.com/packages/lf20_1pxqjqps.json",
@@ -322,11 +339,15 @@ def get_keywords(movie_id):
 def render_movie_player(movie):
     if not movie:
         return
-    movie_id = movie.get("id")
+    movie_id = movie.get("id")  # <-- this comes from the movie they clicked
     title = movie.get("title") or "Untitled"
+    embed_url = f"https://vidsrc.me/embed/movie/{movie_id}"
 
+<<<<<<< HEAD
+=======
     embed_url = f"{EMBED_BASE}/embed/movie/{movie_id}?apikey={st.secrets['EMBED_API_KEY']}"
 
+>>>>>>> d1ecd21dd7e9cd4bb4daff4446c6de9107e78c85
     st.markdown(f"### 🎥 Now Playing: {title}")
     st.markdown(
         f'<a href="{embed_url}" target="_blank" '
