@@ -341,11 +341,8 @@ def render_movie_player(movie):
     title = movie.get("title") or "Untitled"
     embed_url = f"https://vidsrc.me/embed/movie/{movie_id}"
 
-<<<<<<< HEAD
-=======
     embed_url = f"{EMBED_BASE}/embed/movie/{movie_id}?apikey={st.secrets['EMBED_API_KEY']}"
 
->>>>>>> d1ecd21dd7e9cd4bb4daff4446c6de9107e78c85
     st.markdown(f"### 🎥 Now Playing: {title}")
     st.markdown(
         f'<a href="{embed_url}" target="_blank" '
