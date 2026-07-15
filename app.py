@@ -105,9 +105,9 @@ if not api_key:
     st.title("🎬 CineSense — AI Movie Recommender")
     st.error("TMDB API key not configured. Add it to `.streamlit/secrets.toml`.")
     st.stop()
-=======
+
 EMBED_BASE = "https://api.codespecters.com"
->>>>>>> d1ecd21dd7e9cd4bb4daff4446c6de9107e78c85
+
 
 LOTTIE_URLS = {
     "hero": "https://assets9.lottiefiles.com/packages/lf20_1pxqjqps.json",
