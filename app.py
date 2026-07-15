@@ -12,6 +12,7 @@ from datetime import datetime
 import pandas as pd
 import requests
 import streamlit as st
+import streamlit.components.v1 as components
 from PIL import Image
 from streamlit_option_menu import option_menu
 from streamlit_lottie import st_lottie
@@ -29,54 +30,8 @@ st.set_page_config(
 )
 
 # ============================================================
-# THEME FIX
-# ============================================================
-st.markdown("""
-<style>
-    .stButton button {
-        background-color: rgba(255,255,255,0.05) !important;
-        border: 1px solid rgba(255,255,255,0.15) !important;
-        color: #ddd !important;
-    }
-    .stButton button:hover {
-        border-color: rgba(255,255,255,0.4) !important;
-    }
-    div[data-testid="metric-container"] {
-        background-color: rgba(255,255,255,0.05) !important;
-        border: 1px solid rgba(255,255,255,0.1) !important;
-        border-radius: 8px !important;
-        padding: 12px !important;
-    }
-    section[data-testid="stSidebar"] {
-        background-color: #0e1117 !important;
-    }
-    div[data-baseweb="select"] > div {
-        background-color: rgba(255,255,255,0.05) !important;
-        border-color: rgba(255,255,255,0.2) !important;
-    }
-    div[data-testid="stVerticalBlockBorder"] {
-        background-color: rgba(255,255,255,0.03) !important;
-        border-color: rgba(255,255,255,0.1) !important;
-    }
-    .stDownloadButton button {
-        background-color: rgba(255,255,255,0.05) !important;
-        border-color: rgba(255,255,255,0.2) !important;
-        color: #ddd !important;
-    }
-    .stProgress > div > div {
-        background-color: #ff4b4b !important;
-    }
-    div[data-testid="stImage"] img {
-        border-radius: 8px;
-    }
-</style>
-""", unsafe_allow_html=True)
-
-# ============================================================
 # CONSTANTS
 # ============================================================
-api_key = st.secrets["TMDB_API_KEY"]
-
 GENRES = {
     "Action": 28, "Adventure": 12, "Animation": 16, "Comedy": 35, "Crime": 80,
     "Documentary": 99, "Drama": 18, "Family": 10751, "Fantasy": 14, "Horror": 27,
@@ -92,6 +47,7 @@ MOODS = {
 }
 IMG_BASE = "https://image.tmdb.org/t/p/w342"
 BASE_URL = "https://api.themoviedb.org/3"
+
 # 👇 Change this to your deployed Node.js app URL later
 EMBED_BASE = "https://api.codespecters.com"
 
@@ -105,9 +61,6 @@ if not api_key:
     st.title("🎬 CineSense — AI Movie Recommender")
     st.error("TMDB API key not configured. Add it to `.streamlit/secrets.toml`.")
     st.stop()
-
-EMBED_BASE = "https://api.codespecters.com"
-
 
 LOTTIE_URLS = {
     "hero": "https://assets9.lottiefiles.com/packages/lf20_1pxqjqps.json",
@@ -331,8 +284,23 @@ def get_keywords(movie_id):
     return tmdb_get(f"/movie/{movie_id}/keywords").get("keywords", [])
 
 
+def get_trailer_key(movie_id):
+    results = tmdb_get(f"/movie/{movie_id}/videos").get("results", [])
+    youtube_vids = [v for v in results if v.get("site") == "YouTube"]
+    for v in youtube_vids:
+        if v.get("type") == "Trailer" and v.get("official"):
+            return v["key"]
+    for v in youtube_vids:
+        if v.get("type") == "Trailer":
+            return v["key"]
+    for v in youtube_vids:
+        if v.get("type") == "Teaser":
+            return v["key"]
+    return youtube_vids[0]["key"] if youtube_vids else None
+
+
 # ============================================================
-# 🎥 MOVIE PLAYER — opens codespecters in new tab
+# 🎥 MOVIE PLAYER — opens your Node.js app
 # ============================================================
 def render_movie_player(movie):
     if not movie:
@@ -340,8 +308,6 @@ def render_movie_player(movie):
     movie_id = movie.get("id")  # <-- this comes from the movie they clicked
     title = movie.get("title") or "Untitled"
     embed_url = f"https://vidsrc.me/embed/movie/{movie_id}"
-
-    embed_url = f"{EMBED_BASE}/embed/movie/{movie_id}?apikey={st.secrets['EMBED_API_KEY']}"
 
     st.markdown(f"### 🎥 Now Playing: {title}")
     st.markdown(
@@ -379,15 +345,15 @@ def render_grid(movies, key_prefix, limit=10, show_add=True, columns=5, animate=
                 c1, c2, c3 = st.columns(3)
                 with c1:
                     if show_add:
-                        if st.button("+", key=f"{key_prefix}_add_{m['id']}_{i}"):
+                        if st.button("➕ List", key=f"{key_prefix}_add_{m['id']}_{i}"):
                             st.session_state.watchlist[m["id"]] = m
                             st.toast(f"Added '{title}' to watchlist ✅")
                             rain(emoji="🎬", font_size=30, falling_speed=5, animation_length=1)
                 with c2:
-                    if st.button("🔍", key=f"{key_prefix}_sim_{m['id']}_{i}"):
+                    if st.button("🔎 Sim", key=f"{key_prefix}_sim_{m['id']}_{i}"):
                         st.session_state["similar_target"] = m
                 with c3:
-                    if st.button("▶", key=f"{key_prefix}_play_{m['id']}_{i}"):
+                    if st.button("🎥 Play", key=f"{key_prefix}_play_{m['id']}_{i}"):
                         st.session_state.current_playing = m
                         st.rerun()
 
@@ -510,13 +476,13 @@ elif page == "Surprise Me":
             trailer_q = f"{pick.get('title')} trailer".replace(" ", "+")
             st.markdown(f"[▶ Watch Trailer](https://www.youtube.com/results?search_query={trailer_q})")
 
-            col_a, col_b = st.columns(2)
-            with col_a:
-                if st.button("➕ Add", key="surprise_add"):
+            c1a, c1b = st.columns(2)
+            with c1a:
+                if st.button("➕ Add to Watchlist", key="surprise_add"):
                     st.session_state.watchlist[pick["id"]] = pick
                     st.toast("Added to watchlist ✅")
-            with col_b:
-                if st.button("▶ Play", key="surprise_play"):
+            with c1b:
+                if st.button("🎥 Watch Now", key="surprise_play"):
                     st.session_state.current_playing = pick
                     st.rerun()
 
